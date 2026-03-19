@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install:*)",
+      "Bash(npm run:*)",
+      "Bash(npm test:*)",
+      "Bash(node:*)",
+      "Bash(npx tsc:*)",
+      "Bash(grep:*)",
+      "Bash(mkdir -p modules)",
+      "Bash(mv whatsapp-module:*)",
+      "Bash(mv sheets-module:*)",
+      "Bash(mkdir -p modules/ai-agent)"
+    ]
+  }
+}

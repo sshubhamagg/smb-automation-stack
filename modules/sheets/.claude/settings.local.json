@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//Users/shubhamsinghal/Desktop/shubham/automation-stack/docs/**)",
+      "Read(//Users/shubhamsinghal/Desktop/shubham/automation-stack/**)",
+      "Bash(npm install:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npm test:*)"
+    ]
+  }
+}
