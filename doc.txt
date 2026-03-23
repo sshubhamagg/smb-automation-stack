@@ -1,0 +1,96 @@
+PRODUCT CONTEXT — Spotify Chart Intelligence
+
+Spotify Chart Intelligence is a lightweight product that helps music teams instantly understand what is changing on Spotify charts every day.
+
+The product tracks chart movements across key regions and delivers clear, actionable insights without requiring manual effort.
+
+CORE FUNCTIONALITY:
+
+* Tracks Spotify charts across major regions (Global, India, US, UK, etc.)
+* Identifies:
+
+  * New songs entering charts (primary signal)
+  * Fast-rising tracks (momentum)
+  * Region-wise trends
+* Sends a daily summary at 10 AM IST
+* Allows on-demand exploration via a Telegram bot
+
+USER EXPERIENCE:
+
+Users do not need to check dashboards or analyze data.
+
+They simply:
+
+* Receive a daily summary of key changes
+* Can interact with the bot to explore specific regions
+
+CORE PROBLEM:
+
+Music teams currently:
+
+* Manually check Spotify charts across regions
+* Spend time identifying what changed
+* Lack a clear, structured view of daily movement
+
+This leads to:
+
+* Missed early signals
+* Inefficient workflows
+* Slow decision-making
+
+CORE VALUE:
+
+The product tells you:
+
+"What changed in Spotify charts today."
+
+This includes:
+
+* Which new songs entered charts
+* Which songs are rising fast
+* What is trending across regions
+
+PRODUCT POSITIONING:
+
+This is NOT a dashboard or analytics tool.
+
+It is:
+
+* A signal layer
+* Focused on speed and clarity
+* Designed for quick decision-making
+
+KEY DIFFERENTIATION:
+
+* No dashboards
+* No complexity
+* Instant insights
+* Delivered via Telegram
+
+TARGET USERS:
+
+* Music labels
+* Marketing agencies
+* Artist managers
+* Growth teams
+
+PRIMARY USE CASE:
+
+Daily awareness of chart changes.
+
+SECONDARY USE CASE:
+
+Quick exploration of specific regions on demand.
+
+GOAL OF THE DECK:
+
+* Clearly communicate the value
+* Show how simple and useful the product is
+* Make users want to try it immediately
+
+TONE:
+
+* Sharp
+* Minimal
+* Clear
+* Confident

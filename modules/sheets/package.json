@@ -2,7 +2,7 @@
   "name": "sheets-module",
   "version": "1.0.0",
   "description": "Standalone Google Sheets module",
-  "main": "dist/main.js",
+  "main": "src/main.ts",
   "scripts": {
     "dev": "tsx src/main.ts",
     "build": "tsc",

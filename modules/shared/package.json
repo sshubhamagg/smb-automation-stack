@@ -1,0 +1,8 @@
+{
+  "name": "shared-types",
+  "version": "1.0.0",
+  "main": "src/types.ts",
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  }
+}

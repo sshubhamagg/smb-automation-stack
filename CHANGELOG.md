@@ -2,6 +2,51 @@
 
 ---
 
+## [2026-03-23] — System Audit + Documentation Rebuild
+
+### Updated (Documentation)
+* Rebuilt all docs to match actual code — removed all references to non-existent `apps/orchestrator/`
+* `docs/architecture.md` — corrected layer diagram; documented two separate apps (`apps/ledger/`, `apps/mining/`) with their distinct responsibilities
+* `docs/modules.md` — added `local` (Ollama) and `nvidia` (NVIDIA NIM) intelligence adapters; updated all adapter tables
+* `docs/use-cases.md` — full rewrite of Ledger section: documented all 6 flows (intent-router + 5 sub-flows), AI mode, ledger-party, ledger-delete
+* `docs/engine.md` — fixed reliability mechanism file references to `apps/mining/src/server.ts`
+* `docs/context.md` — added context shapes for all ledger flows; fixed app references
+* `docs/flows.md` — documented multi-flow dispatch pattern used by ledger; fixed app references
+* `docs/agent-guide.md` — added `'local'` and `'nvidia'` as valid intelligence providers
+* `docs/constraints.md` — fixed webhook constraint to reference both apps
+* `docs/limitations.md` — added ledger soft-delete limitation; fixed all file references
+* `docs/developer-guide.md` — fixed all app references from orchestrator to `apps/mining/` and `apps/ledger/`
+* `docs/adapters.md` — added local and nvidia adapters to intelligence table
+
+### Added
+* `docs/backlog.md` — consolidated backlog with bugs, architectural improvements, performance issues, DX improvements, and AI reliability items; all traced to code
+
+---
+
+## [2026-03-21] — Ledger App — WhatsApp Financial Ledger
+
+### Added
+* Created `apps/ledger/` — standalone Express app for ledger operations
+* `apps/ledger/src/server.ts` — Express server, Meta webhook endpoint, ingestion pipeline
+* `apps/ledger/src/handler.ts` — `handleLedgerMessage()` — two-phase dispatch: intent-router flow then sub-flow
+* Created `flows/ledger/` with intent-router and five sub-flows:
+  * `flows/ledger/intent-router/flow.ts` — `buildInitialContext()`, `intentRouterFlow`, `resolveRouting()`; structured parsing + optional AI classification/extraction
+  * `flows/ledger/ledger-entry/flow.ts` — duplicate check, conditional write, confirmation/warning message
+  * `flows/ledger/ledger-balance/flow.ts` — reads all rows, computes net credits/debits/balance
+  * `flows/ledger/ledger-summary/flow.ts` — filters today's rows, sends daily summary
+  * `flows/ledger/ledger-party/flow.ts` — filters by party name (case-insensitive), sends ledger
+  * `flows/ledger/ledger-delete/flow.ts` — soft-deletes last user row (blank overwrite), sends confirmation
+* `flows/ledger/package.json`, `tsconfig.json`
+* `docs/ledger-flow/setup.md` — end-to-end setup guide
+
+### Notes
+* Two modes: `LEDGER_MODE=structured` (default, deterministic) and `LEDGER_MODE=ai` (LLM classification + extraction when structured parse fails)
+* AI provider configurable: `LEDGER_AI_PROVIDER` — supports all four registered providers (openai, anthropic, local, nvidia)
+* Config injected via `ctx.state.config` from env vars — no hardcoded values
+* `ledger-entry` checks for duplicates (same type+amount+party+user) before writing
+
+---
+
 ## [2026-03-19] — Module 3: Phase 5 — Implementation
 
 ### Added
@@ -507,3 +552,209 @@
 * TypeScript strict mode: zero compiler errors (tsc --noEmit clean)
 * Open handle warning fully eliminated — Jest exits cleanly with no warnings
 * `outbound.ts` confirmed correct as-is: `clearTimeout` already called in both success and catch paths; `response.json()` already wrapped in try/catch
+
+---
+
+## [2026-03-20] — Ingestion Module: Discovery
+
+### Added
+
+* Full discovery audit of existing ingestion logic across the codebase
+* Documented two parallel ingestion implementations: `flows/daily-reporting/src/server.ts` (inline traversal) and `modules/whatsapp/src/validator.ts` (production-grade validator)
+* Identified `modules/whatsapp/src/validator.ts` and `modules/whatsapp/src/normalizer.ts` as extractable targets
+* Confirmed `parser.ts`, `state.ts`, `handler.ts` in daily-reporting as flow-level concerns — not extractable
+
+### Notes
+
+* No code modified during discovery
+* Extraction plan defined: ingestion-module as a wrapper layer over existing whatsapp module functions
+* Rule established: do not extract from `server.ts`
+
+---
+
+## [2026-03-20] — Ingestion Module: Extraction Plan
+
+### Added
+
+* Defined `IngestionInput` type: source, provider, payload, rawBody (optional), headers (optional), secret (optional)
+* Defined `NormalizedEvent` type per CLAUDE.md spec with `provider` field added
+* Defined `IngestionResult` discriminated union: ok, signature_invalid, validation_failed, status_update, unsupported_type, adapter_error
+* Defined `Adapter` interface: `execute(input: IngestionInput): Promise<IngestionResult>`
+* Defined provider registry using `Map<string, Adapter>` — no if/else chains
+* Defined MetaAdapter pipeline: sig verify (opt-in) → validate → type guard → normalize → map
+* Mapped `NormalizedMessage` fields to `NormalizedEvent.metadata` fields
+
+### Notes
+
+* Zero changes to whatsapp module required
+* Signature verification opt-in: all three of rawBody, headers, secret must be present for check to run
+* Relative imports chosen over package references to avoid modifying whatsapp package.json
+
+---
+
+## [2026-03-20] — Ingestion Module: Implementation
+
+### Added
+
+* `modules/ingestion/src/types.ts` — IngestionInput, NormalizedEventMetadata, NormalizedEvent, IngestionResult, Adapter interface
+* `modules/ingestion/src/registry.ts` — Map-based provider registry with registerAdapter and getAdapter
+* `modules/ingestion/src/adapters/meta.ts` — MetaAdapter wrapping whatsapp/validator and whatsapp/normalizer via relative imports
+* `modules/ingestion/src/index.ts` — public API: receive(), adapter registration at module init, type re-exports
+* `modules/ingestion/tests/meta.adapter.test.ts` — 9 unit tests across 5 scenarios (valid message, signature failure, status update, unsupported type, validation failure)
+* `modules/ingestion/package.json` — module package with jest/ts-jest configuration
+* `modules/ingestion/tsconfig.json` — TypeScript config (no rootDir — cross-module relative imports)
+
+### Notes
+
+* Zero modifications to any pre-existing file
+* `flows/daily-reporting` continues to work without adopting the new module
+* `modules/whatsapp` validator and normalizer imported as-is — no logic copied
+
+---
+
+## [2026-03-20] — Ingestion Module: Targeted Fixes
+
+### Updated
+
+* `modules/ingestion/src/types.ts` — `NormalizedEventMetadata` relaxed: all fields made optional, renamed from snake_case to camelCase (messageId, correlationId, messageType, receivedAt, phoneNumberId), added `[key: string]: any` index signature for provider-specific extensions
+* `modules/ingestion/src/types.ts` — `metadata` on `NormalizedEvent` changed from required to optional (`metadata?`)
+* `modules/ingestion/src/adapters/meta.ts` — metadata construction updated to camelCase field names
+* `modules/ingestion/src/index.ts` — both adapter_error catch blocks updated: `String(err)` → `err instanceof Error ? err.message : 'unknown error'`
+* `modules/ingestion/tests/meta.adapter.test.ts` — metadata assertions updated to camelCase with optional chaining (`metadata?.messageId` etc.)
+
+### Notes
+
+* Tasks 1 (provider in NormalizedEvent) and 3 (provider in MetaAdapter) required no changes — already correctly implemented
+* All 9 tests remain valid after field renaming
+* No architectural changes
+
+---
+
+## [2026-03-20] — Ingestion Module: Documentation
+
+### Added
+
+* `docs/ingestion-module.md` — module documentation: purpose, architecture diagram, all interface definitions, MetaAdapter pipeline, field mapping table, usage example, dependency table, test coverage, backward compatibility statement
+* `audits/ingestion-module.md` — extraction audit: files examined, changes made, five architecture decisions with rationale, risk assessment table, test coverage gaps, follow-up items
+* Appended ingestion phase entries to `CHANGELOG.md`
+
+---
+
+## [2026-03-20] — Storage Module: Design + Implementation
+
+### Added
+
+* `modules/storage/src/types.ts` — `StorageInput` (provider, operation, resource, data?, query?, options?), `StorageResult<T>` discriminated union, `StorageAdapter` interface
+* `modules/storage/src/registry.ts` — Map-based provider registry: `registerAdapter`, `getAdapter`
+* `modules/storage/src/adapters/sheets.ts` — SheetsAdapter mapping: read→`read()`, write→`append()`, update→`update()`, query→`search()`; input guards for missing range/data/query; error code mapping from sheets result
+* `modules/storage/src/index.ts` — public `execute()` with two try/catch layers; re-exports types; registers SheetsAdapter at init
+* `modules/storage/tests/sheets.adapter.test.ts` — 23 test cases across all 4 operations + error paths; `sheets-module` fully mocked to prevent Google credential requirement
+* `modules/storage/package.json` — `"sheets-module": "file:../sheets"` as runtime dependency
+* `modules/storage/tsconfig.json` — standard config with `rootDir: "src"`
+* `docs/storage-module.md` — module documentation
+
+### Notes
+
+* Zero modifications to `modules/sheets`
+* `sheets-module` mocked via `jest.mock('sheets-module', ...)` in all tests
+* 23/23 tests passing
+
+---
+
+## [2026-03-20] — Storage Module: Targeted Fixes
+
+### Updated
+
+* `modules/storage/src/types.ts` — `StorageInput.collection` renamed to `resource` (provider-agnostic naming); added `data?`, `query?`, `options?` fields; removed `value?` and `filter?`; `StorageResult` made generic (`StorageResult<T = any>`)
+* `modules/storage/src/adapters/sheets.ts` — all field references updated: `resource` for sheetId, `options.range` for range, `data` for row data, `query` for filter; error shape mapped from `result.error.code` and `result.error.message`
+* `modules/storage/src/index.ts` — removed `StorageData` and `StorageMetadata` re-exports (superseded by generic result)
+* `modules/storage/tests/sheets.adapter.test.ts` — all test inputs updated to new field names; `BASE` uses `resource`; `options: { range }` pattern throughout
+
+### Notes
+
+* No architectural changes
+* 23/23 tests remain passing after rename
+
+---
+
+## [2026-03-20] — AI Module: Design + Implementation
+
+### Added
+
+* `modules/ai/src/types.ts` — `Prompt`, `AIInput` (provider, task, input.text/data, options), `AIResult<T>` discriminated union, `AIAdapter` interface, `TaskHandler` interface, `TaskValidationResult`
+* `modules/ai/src/registry.ts` — dual Map registry for adapters and task handlers: `registerAdapter`, `getAdapter`, `registerTask`, `getTask`
+* `modules/ai/src/adapters/openai.ts` — OpenAI HTTP adapter: Node 18 `fetch`, `AbortController` (30s timeout), model `gpt-4o-mini`, temperature 0
+* `modules/ai/src/tasks/classification.ts` — prompt with category list; validates label (string, in allowed categories), confidence (optional 0–1), reasoning (string)
+* `modules/ai/src/tasks/extraction.ts` — prompt for named field extraction; validates all values are string or null; rejects empty result
+* `modules/ai/src/tasks/qa.ts` — prompt embeds `options.question`; validates answer (string) and confidence (optional 0–1); instructs LLM to constrain answer to provided content
+* `modules/ai/src/tasks/reasoning.ts` — prompt for step-by-step analysis; validates conclusion (string), steps (non-empty string array), confidence (optional 0–1)
+* `modules/ai/src/utils/parser.ts` — self-contained three-stage JSON extractor (fence → substring → direct); no dependency on `ai-agent` module
+* `modules/ai/src/pipeline.ts` — orchestrates: `getTask` → `getAdapter` → `buildPrompt` → `adapter.execute` → `parse` → `validate` → `AIResult`; never throws
+* `modules/ai/src/index.ts` — registers OpenAI adapter (from `OPENAI_API_KEY` env) and all 4 task handlers at module init; exports `run()` and types
+* `modules/ai/tests/pipeline.test.ts` — 9 test cases covering all 4 tasks (happy path) + unknown_task + unknown_provider + provider_error + parse_error + validation_error
+* `modules/ai/package.json` — no runtime dependencies; dev: typescript, jest, ts-jest
+* `modules/ai/tsconfig.json` — no rootDir (cross-module relative imports removed after parser was internalised)
+* `docs/ai-module.md` — module documentation
+
+### Notes
+
+* `parse()` reused logic moved to `modules/ai/src/utils/parser.ts` — no dependency on `modules/ai-agent`
+* 9/9 tests passing
+* `modules/ai-agent` unchanged
+
+---
+
+## [2026-03-20] — AI Module: Targeted Fixes
+
+### Updated
+
+* `modules/ai/src/types.ts` — `AIAdapter.call` renamed to `AIAdapter.execute(prompt, options?)`; `Prompt.system` made optional; `AIInput.content: string` replaced with `AIInput.input: { text?: string; data?: unknown }` per CLAUDE.md spec
+* `modules/ai/src/adapters/openai.ts` — method renamed `call` → `execute`
+* `modules/ai/src/pipeline.ts` — `adapter.call(prompt)` → `adapter.execute(prompt)`; parser import updated from `../../ai-agent/src/parser` to `./utils/parser`
+* `modules/ai/src/tasks/classification.ts` — `input.content` → `input.input.text ?? ''`; `confidence` validation made optional (guard only fires if value is present)
+* `modules/ai/src/tasks/extraction.ts` — `input.content` → `input.input.text ?? ''`
+* `modules/ai/src/tasks/qa.ts` — `input.content` → `input.input.text ?? ''`; `confidence` validation made optional
+* `modules/ai/src/tasks/reasoning.ts` — `input.content` → `input.input.text ?? ''`; `confidence` validation made optional
+* `modules/ai/tests/pipeline.test.ts` — mock paths updated from `../../ai-agent/src/parser` to `../src/utils/parser`; `AIInput.content` → `AIInput.input: { text }`; `{ call: jest.fn() }` → `{ execute: jest.fn() }`
+
+### Notes
+
+* 9/9 tests remain passing
+* No architectural changes
+
+---
+
+## [2026-03-20] — Engine Module: Design + Implementation
+
+### Added
+
+* `modules/engine/src/types.ts` — `ExecutionContext` (namespaced: event, ai, storage, communication, state), `FlowStep` (id, type, input?, condition?), `Flow`, `StepResult` discriminated union, `ExecutionResult` discriminated union
+* `modules/engine/src/stepExecutor.ts` — routes `step.type` to `ai-module.run`, `storage-module.execute`, or `communication-module.execute`; all calls wrapped in try/catch; never throws
+* `modules/engine/src/runner.ts` — sequential loop: evaluates condition (skip if false), calls `executeStep`, fails fast on first failure, writes output to `context.{type}[step.id]`
+* `modules/engine/src/index.ts` — exports `runFlow` and all types
+* `modules/engine/tests/runner.test.ts` — 5 test cases: sequential execution with context accumulation, conditional skip, fail-fast, provider exception, initial context passthrough
+* `modules/engine/package.json` — `file:` dependencies on `ai-module`, `storage-module`, `communication-module`
+* `modules/engine/tsconfig.json` — standard config with `rootDir: "src"`
+* `docs/engine-module.md` — module documentation
+
+### Notes
+
+* All three module dependencies fully mocked in tests
+* 5/5 tests passing
+* No existing module modified
+
+---
+
+## [2026-03-20] — Engine Module: Targeted Fixes
+
+### Updated
+
+* `modules/engine/src/types.ts` — `ExecutionContext` changed from `Record<string, unknown>` to structured namespaced type (`event?`, `ai?`, `storage?`, `communication?`, `state?`); `FlowStep.module` renamed to `FlowStep.type`; `FlowStep.outputKey` removed (output storage is now automatic by type + step id); `FlowStep.input` made optional (defaults to `{}`)
+* `modules/engine/src/stepExecutor.ts` — `step.module` → `step.type` throughout; `OkAIResult` updated to `{ ok: true; result: { output: unknown } }` (CLAUDE.md spec shape); AI result extraction updated from `res.output` → `res.result.output`; `sendMessage` import replaced with namespace import `* as communicationModule`; communication case updated from `sendMessage(to, message)` to `communicationModule.execute(rawInput)`; input guard added: `step.input ? step.input(context) : {}`
+* `modules/engine/src/runner.ts` — `context[step.outputKey] = output` replaced with explicit namespace writes: `context.ai[step.id]`, `context.storage[step.id]`, `context.communication[step.id]`
+* `modules/engine/tests/runner.test.ts` — all `module:` → `type:`; `outputKey` removed from step definitions; context access updated to namespaced keys (`ctx.storage?.['fetch-data']`); AI mock return updated to `{ ok: true, result: { output: ... } }`; communication mock updated from `sendMessage` to `execute`; initial context test uses `state: { phone, body }` pattern
+
+### Notes
+
+* 5/5 tests remain passing
+* No architectural changes
