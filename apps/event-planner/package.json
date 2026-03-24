@@ -1,0 +1,23 @@
+{
+  "name": "event-planner-app",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "ts-node src/server.ts",
+    "start": "ts-node src/server.ts"
+  },
+  "dependencies": {
+    "communication-module": "file:../../modules/communication",
+    "dotenv": "^16.0.0",
+    "engine-module": "file:../../modules/engine",
+    "express": "^4.18.0",
+    "intelligence-module": "file:../../modules/intelligence",
+    "ingestion-module": "file:../../modules/ingestion",
+    "storage-module": "file:../../modules/storage"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.0",
+    "@types/node": "^20.0.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.0.0"
+  }
+}
