@@ -224,22 +224,5 @@ export const miningReportFlow: Flow = {
       }),
     },
 
-    // Step 6 — notify-owner
-    // Sends a full summary to the business owner.
-    {
-      id: 'notify-owner',
-      type: 'communication',
-      input: (ctx: ExecutionContext) => ({
-        to: ctx.state?.['config']?.ownerPhone,
-        message:
-          `📊 Report from ${ctx.state?.['parsed']?.mine}\n` +
-          `Labor: ${ctx.state?.['parsed']?.labor}\n` +
-          `Machine A: ${ctx.state?.['parsed']?.machineA}h | ` +
-          `Machine B: ${ctx.state?.['parsed']?.machineB}h\n` +
-          `Output: ${ctx.state?.['parsed']?.output} tons\n` +
-          `Material: ${ctx.state?.['parsed']?.material}`,
-      }),
-    },
-
   ],
 };

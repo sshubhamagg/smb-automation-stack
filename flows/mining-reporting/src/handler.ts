@@ -54,7 +54,7 @@ export async function handleMiningReport(event: MiningReportEvent): Promise<void
     return;
   }
 
-  // --- Execute I/O flow (steps 4-6) ----------------------------------------
+  // --- Execute I/O flow (steps 4-5: store + reply-manager) ------------------
 
   const result = await runFlow(miningReportFlow, ctxResult.context, modules);
 
@@ -69,5 +69,26 @@ export async function handleMiningReport(event: MiningReportEvent): Promise<void
     }).catch((err: unknown) => {
       console.error('Failed to send flow-error response:', err instanceof Error ? err.message : err);
     });
+    return;
   }
+
+  // --- Notify owner after 30-second delay (step 6) --------------------------
+
+  const parsed = ctxResult.context.state?.['parsed'];
+  const config = ctxResult.context.state?.['config'];
+
+  setTimeout(() => {
+    communication.execute({
+      to: config?.ownerPhone,
+      message:
+        `📊 Report from ${parsed?.mine}\n` +
+        `Labor: ${parsed?.labor}\n` +
+        `Machine A: ${parsed?.machineA}h | ` +
+        `Machine B: ${parsed?.machineB}h\n` +
+        `Output: ${parsed?.output} tons\n` +
+        `Material: ${parsed?.material}`,
+    }).catch((err: unknown) => {
+      console.error('Failed to send owner notification:', err instanceof Error ? err.message : err);
+    });
+  }, 30_000);
 }
