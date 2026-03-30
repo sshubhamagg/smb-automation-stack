@@ -1,2 +1,36 @@
+# Dependencies
 node_modules/
 **/node_modules/
+
+# Build output
+dist/
+**/dist/
+
+# Environment variables
+.env
+**/.env
+
+# TypeScript
+*.tsbuildinfo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+npm-debug.log*
+
+# Coverage
+coverage/
+**/coverage/
+
+# Temp files
+*.tmp
+*.bak
