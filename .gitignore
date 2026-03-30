@@ -6,9 +6,18 @@ node_modules/
 dist/
 **/dist/
 
-# Environment variables
+# Environment variables — real values only (.env.example and .env.template are safe to commit)
 .env
 **/.env
+
+# Google service account credentials
+GOOGLE_SERVICE_ACCOUNT.json
+*service_account*.json
+*service-account*.json
+*serviceaccount*.json
+
+# Claude Code local settings (may contain API keys in bash permissions)
+.claude/settings.local.json
 
 # TypeScript
 *.tsbuildinfo
@@ -34,3 +43,6 @@ coverage/
 # Temp files
 *.tmp
 *.bak
+
+# CSV data exports
+*.csv
