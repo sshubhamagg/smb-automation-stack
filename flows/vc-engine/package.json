@@ -1,0 +1,11 @@
+{
+  "name": "vc-engine-flows",
+  "version": "1.0.0",
+  "scripts": {
+    "build": "tsc"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  }
+}
