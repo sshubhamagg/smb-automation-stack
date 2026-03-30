@@ -18,15 +18,15 @@
 //   4. confirm-student   — communication (condition: write succeeded AND intent = present)
 // ============================================================
 
-import type { Flow, ExecutionContext } from '../../../modules/engine/src/types';
-import type { TuitionConfig, ParsedIntent } from '../src/types';
+import type { Flow, ExecutionContext } from "../../../modules/engine/src/types";
+import type { TuitionConfig, ParsedIntent } from "../src/types";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
 export type AttendanceEvent = {
-  phone_number: string;   // teacher's phone (sender)
+  phone_number: string; // teacher's phone (sender)
 };
 
 export type AttendanceState = {
@@ -48,7 +48,7 @@ export function buildInitialContext(
   config: TuitionConfig,
 ): ExecutionContext {
   const attendanceId = `ATT-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-  const markedAt     = new Date().toISOString();
+  const markedAt = new Date().toISOString();
 
   return {
     event,
@@ -65,16 +65,21 @@ function getState(ctx: ExecutionContext): AttendanceState {
 }
 
 function getStudentRows(ctx: ExecutionContext): StudentRow[] {
-  const out = ctx.outputs?.['read-student'] as { rows?: StudentRow[] } | undefined;
+  const out = ctx.outputs?.["read-student"] as
+    | { rows?: StudentRow[] }
+    | undefined;
   return out?.rows ?? [];
 }
 
-function findStudent(rows: StudentRow[], phone: string): StudentRow | undefined {
-  return rows.find(r => (r['Phone'] ?? '').trim() === phone.trim());
+function findStudent(
+  rows: StudentRow[],
+  phone: string,
+): StudentRow | undefined {
+  return rows.find((r) => (r["Phone"] ?? "").trim() === phone.trim());
 }
 
 function writeSucceeded(ctx: ExecutionContext): boolean {
-  return ctx.outputs?.['write-attendance'] !== undefined;
+  return ctx.outputs?.["write-attendance"] !== undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -82,101 +87,98 @@ function writeSucceeded(ctx: ExecutionContext): boolean {
 // ---------------------------------------------------------------------------
 
 export const markAttendanceFlow: Flow = {
-  id: 'mark-attendance',
+  id: "mark-attendance",
   steps: [
-
     // Step 1: Read STUDENTS sheet to look up name + batch
     {
-      id: 'read-student',
-      type: 'storage',
+      id: "read-student",
+      type: "storage",
       input: (ctx: ExecutionContext) => ({
-        provider:  'sheets',
-        operation: 'read',
-        resource:  getState(ctx).config.studentsSheetId,
-        options:   { range: 'STUDENTS' },
+        provider: "sheets",
+        operation: "read",
+        resource: getState(ctx).config.studentsSheetId,
+        options: { range: "STUDENTS" },
       }),
     },
 
     // Step 2: Write attendance row (student lookup failure is non-fatal — use phone fallback)
     {
-      id: 'write-attendance',
-      type: 'storage',
+      id: "write-attendance",
+      type: "storage",
       input: (ctx: ExecutionContext) => {
-        const s       = getState(ctx);
-        const rows    = getStudentRows(ctx);
-        const student = findStudent(rows, s.parsed.studentPhone ?? '');
-        const studentId = student?.['Student ID'] ?? '';
-        const name      = student?.['Name']       ?? s.parsed.studentPhone ?? '';
-        const batch     = student?.['Batch']      ?? '';
-        const status    = s.parsed.intent === 'present' ? 'PRESENT' : 'ABSENT';
+        const s = getState(ctx);
+        const rows = getStudentRows(ctx);
+        const student = findStudent(rows, s.parsed.studentPhone ?? "");
+        const studentId = student?.["Student ID"] ?? "";
+        const name = student?.["Name"] ?? s.parsed.studentPhone ?? "";
+        const batch = student?.["Batch"] ?? "";
+        const status = s.parsed.intent === "present" ? "PRESENT" : "ABSENT";
 
         return {
-          provider:  'sheets',
-          operation: 'write',
-          resource:  s.config.attendanceSheetId,
+          provider: "sheets",
+          operation: "write",
+          resource: s.config.attendanceSheetId,
           data: [
             s.attendanceId,
             studentId,
-            s.parsed.studentPhone ?? '',
+            s.parsed.studentPhone ?? "",
             name,
             batch,
             status,
             s.config.teacherPhone,
             s.markedAt,
           ],
-          options: { range: 'ATTENDANCE' },
+          options: { range: "ATTENDANCE" },
         };
       },
     },
 
     // Step 3: Confirm to teacher
     {
-      id: 'confirm-teacher',
-      type: 'communication',
+      id: "confirm-teacher",
+      type: "communication",
       condition: writeSucceeded,
       input: (ctx: ExecutionContext) => {
-        const s       = getState(ctx);
-        const rows    = getStudentRows(ctx);
-        const student = findStudent(rows, s.parsed.studentPhone ?? '');
-        const name    = student?.['Name']  ?? s.parsed.studentPhone ?? '';
-        const batch   = student?.['Batch'] ?? '';
-        const status  = s.parsed.intent === 'present' ? 'PRESENT' : 'ABSENT';
-        const date    = s.markedAt.slice(0, 10);
+        const s = getState(ctx);
+        const rows = getStudentRows(ctx);
+        const student = findStudent(rows, s.parsed.studentPhone ?? "");
+        const name = student?.["Name"] ?? s.parsed.studentPhone ?? "";
+        const batch = student?.["Batch"] ?? "";
+        const status = s.parsed.intent === "present" ? "PRESENT" : "ABSENT";
+        const date = s.markedAt.slice(0, 10);
 
         return {
-          to:      s.config.teacherPhone,
+          to: s.config.teacherPhone,
           message: [
-            '✅ Attendance marked',
-            `Student : ${name} (${s.parsed.studentPhone ?? ''})`,
+            "✅ Attendance marked",
+            `Student : ${name} (${s.parsed.studentPhone ?? ""})`,
             `Status  : ${status}`,
             `Date    : ${date}`,
-            `Batch   : ${batch}`,
-          ].join('\n'),
-          provider: 'meta',
+          ].join("\n"),
+          provider: "meta",
         };
       },
     },
 
     // Step 4: Notify student — only when marked PRESENT
     {
-      id: 'confirm-student',
-      type: 'communication',
+      id: "confirm-student",
+      type: "communication",
       condition: (ctx: ExecutionContext) =>
-        writeSucceeded(ctx) && getState(ctx).parsed.intent === 'present',
+        writeSucceeded(ctx) && getState(ctx).parsed.intent === "present",
       input: (ctx: ExecutionContext) => {
-        const s       = getState(ctx);
-        const rows    = getStudentRows(ctx);
-        const student = findStudent(rows, s.parsed.studentPhone ?? '');
-        const name    = student?.['Name'] ?? '';
-        const greeting = name ? `Hi ${name}!` : 'Hi!';
+        const s = getState(ctx);
+        const rows = getStudentRows(ctx);
+        const student = findStudent(rows, s.parsed.studentPhone ?? "");
+        const name = student?.["Name"] ?? "";
+        const greeting = name ? `Hi ${name}!` : "Hi!";
 
         return {
-          to:      s.parsed.studentPhone ?? '',
+          to: s.parsed.studentPhone ?? "",
           message: `${greeting} Your attendance has been marked for today at ${s.config.centerName}. See you next time!`,
-          provider: 'meta',
+          provider: "meta",
         };
       },
     },
-
   ],
 };
