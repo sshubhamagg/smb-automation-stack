@@ -119,7 +119,7 @@ export const markAttendanceFlow: Flow = {
           operation: "write",
           resource: s.config.attendanceSheetId,
           data: [
-            s.attendanceId,
+            s.markedAt.slice(0, 10),
             studentId,
             s.parsed.studentPhone ?? "",
             name,
