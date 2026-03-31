@@ -48,7 +48,7 @@ export function buildInitialContext(
   parsed: ParsedIntent,
   config: PlannerConfig,
 ): ExecutionContext {
-  const taskId     = `EVT-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  const taskId     = `EVT-${String(Date.now()).slice(-5)}`;
   const assignedAt = new Date().toISOString();
   const deadline   = parsed.deadline ?? config.eventDate;
   const category   = parsed.category ?? 'General';
