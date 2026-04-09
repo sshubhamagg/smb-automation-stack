@@ -1,0 +1,187 @@
+# Reusable workflow — called by deploy.yml
+# Handles: install → build → test → deploy for a single service
+
+name: _Build and Deploy Service
+
+on:
+  workflow_call:
+    inputs:
+      service:
+        description: 'Service name (e.g. ledger, mining)'
+        required: true
+        type: string
+      version:
+        description: 'Semver string (e.g. 1.0.0)'
+        required: true
+        type: string
+      app_dir:
+        description: 'Path to the app directory (e.g. apps/ledger)'
+        required: true
+        type: string
+      environment:
+        description: 'Deployment environment'
+        required: false
+        type: string
+        default: production
+    secrets:
+      # Add the secrets your deploy step actually needs.
+      # They are forwarded via `secrets: inherit` in deploy.yml.
+      #
+      # Examples (uncomment + configure as needed):
+      # DOCKER_USERNAME:
+      #   required: false
+      # DOCKER_PASSWORD:
+      #   required: false
+      # DEPLOY_SSH_KEY:
+      #   required: false
+      # RAILWAY_TOKEN:
+      #   required: false
+      # FLY_API_TOKEN:
+      #   required: false
+
+jobs:
+  build-test-deploy:
+    name: '${{ inputs.service }} v${{ inputs.version }}'
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+
+    defaults:
+      run:
+        # All steps run from the service's directory unless overridden
+        working-directory: ${{ inputs.app_dir }}
+
+    steps:
+      # ── 1. Checkout ──────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. Node setup ────────────────────────────────────────────────────
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # ── 3. Cache — root node_modules (shared modules use file: deps) ─────
+      - name: Cache root node_modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: root-node-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: root-node-${{ runner.os }}-
+
+      # ── 4. Cache — module-level node_modules ─────────────────────────────
+      - name: Cache module node_modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            modules/*/node_modules
+          key: modules-node-${{ runner.os }}-${{ hashFiles('modules/*/package-lock.json') }}
+          restore-keys: modules-node-${{ runner.os }}-
+
+      # ── 5. Cache — service node_modules ──────────────────────────────────
+      - name: Cache service node_modules
+        uses: actions/cache@v4
+        with:
+          path: ${{ inputs.app_dir }}/node_modules
+          key: service-${{ inputs.service }}-node-${{ runner.os }}-${{ hashFiles(format('{0}/package-lock.json', inputs.app_dir)) }}
+          restore-keys: service-${{ inputs.service }}-node-${{ runner.os }}-
+
+      # ── 6. Install shared modules (file: dependencies) ───────────────────
+      # Each module that this app depends on must be installed first so that
+      # npm's file: resolution can link them correctly.
+      - name: Install shared modules
+        working-directory: '.'
+        run: |
+          for mod in modules/*/; do
+            if [ -f "$mod/package.json" ]; then
+              echo "Installing $mod"
+              npm ci --prefix "$mod" --ignore-scripts 2>/dev/null || npm install --prefix "$mod" --ignore-scripts
+            fi
+          done
+
+      # ── 7. Install service dependencies ───────────────────────────────────
+      - name: Install service dependencies
+        run: npm ci --ignore-scripts
+
+      # ── 8. TypeScript type-check ──────────────────────────────────────────
+      - name: Type check
+        run: npx tsc --noEmit
+        # Tolerate apps that don't have a tsconfig.json at root
+        continue-on-error: false
+
+      # ── 9. Build ──────────────────────────────────────────────────────────
+      - name: Build
+        run: npm run build --if-present
+
+      # ── 10. Tests ─────────────────────────────────────────────────────────
+      - name: Run tests
+        run: npm test --if-present -- --passWithNoTests --forceExit
+        env:
+          NODE_ENV: test
+          CI: true
+
+      # ── 11. Tag build artifact ────────────────────────────────────────────
+      - name: Tag build output
+        working-directory: '.'
+        run: |
+          echo "SERVICE=${{ inputs.service }}"   >> build.env
+          echo "VERSION=${{ inputs.version }}"   >> build.env
+          echo "APP_DIR=${{ inputs.app_dir }}"   >> build.env
+          echo "COMMIT_SHA=${{ github.sha }}"    >> build.env
+
+      # ── 12. Upload build artifact ─────────────────────────────────────────
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.service }}-v${{ inputs.version }}
+          path: |
+            ${{ inputs.app_dir }}/dist
+            ${{ inputs.app_dir }}/package.json
+            build.env
+          retention-days: 7
+          if-no-files-found: warn
+
+      # ── 13. Deploy ────────────────────────────────────────────────────────
+      #
+      # Replace this step with your actual deploy mechanism.
+      # The service name, version, and app dir are available as env vars.
+      #
+      # Common patterns to swap in:
+      #   • Railway:  railway up --service $SERVICE
+      #   • Fly.io:   fly deploy --config $APP_DIR/fly.toml
+      #   • Docker:   docker build + push to registry, then restart container
+      #   • SSH:      rsync dist/ to server, restart PM2 process
+      #   • Render:   trigger deploy hook via curl
+      #
+      - name: Deploy ${{ inputs.service }}
+        working-directory: '.'
+        env:
+          SERVICE: ${{ inputs.service }}
+          VERSION: ${{ inputs.version }}
+          APP_DIR: ${{ inputs.app_dir }}
+          ENVIRONMENT: ${{ inputs.environment }}
+          # Uncomment secrets as needed:
+          # RAILWAY_TOKEN:   ${{ secrets.RAILWAY_TOKEN }}
+          # FLY_API_TOKEN:   ${{ secrets.FLY_API_TOKEN }}
+          # DEPLOY_SSH_KEY:  ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          echo "Deploying $SERVICE v$VERSION from $APP_DIR to $ENVIRONMENT"
+          # ─────────────────────────────────────────────────────────
+          # TODO: replace the line below with your deploy command
+          # ─────────────────────────────────────────────────────────
+          echo "⚠️  No deploy command configured. Add it to _build-deploy.yml step 13."
+
+      # ── 14. Summary ───────────────────────────────────────────────────────
+      - name: Write job summary
+        if: always()
+        working-directory: '.'
+        run: |
+          echo "## Deploy Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Field       | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|-------------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Service     | \`${{ inputs.service }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Version     | \`v${{ inputs.version }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Environment | \`${{ inputs.environment }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Commit      | \`${{ github.sha }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Tag         | \`${{ github.ref_name }}\` |" >> "$GITHUB_STEP_SUMMARY"

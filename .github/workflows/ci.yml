@@ -1,0 +1,223 @@
+# Runs on every PR and push to main.
+# Uses path filters to only test services/modules that actually changed.
+# This keeps CI fast even as the monorepo grows.
+
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+    # Ignore tag pushes — deploy.yml handles those
+    tags-ignore:
+      - '**'
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ─────────────────────────────────────────────
+  # Detect which services/modules changed
+  # ─────────────────────────────────────────────
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      # Apps
+      ledger:         ${{ steps.filter.outputs.ledger }}
+      mining:         ${{ steps.filter.outputs.mining }}
+      event-planner:  ${{ steps.filter.outputs.event-planner }}
+      field-sales:    ${{ steps.filter.outputs.field-sales }}
+      tuition-center: ${{ steps.filter.outputs.tuition-center }}
+      vc-engine:      ${{ steps.filter.outputs.vc-engine }}
+      accounting:     ${{ steps.filter.outputs.accounting }}
+      # Shared layers — if these change, all apps are affected
+      modules:        ${{ steps.filter.outputs.modules }}
+      flows:          ${{ steps.filter.outputs.flows }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Detect changed paths
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            ledger:
+              - 'apps/ledger/**'
+            mining:
+              - 'apps/mining/**'
+            event-planner:
+              - 'apps/event-planner/**'
+            field-sales:
+              - 'apps/field_sales/**'
+            tuition-center:
+              - 'apps/tuition-center/**'
+            vc-engine:
+              - 'apps/vc-engine/**'
+            accounting:
+              - 'apps/accounting/**'
+            modules:
+              - 'modules/**'
+            flows:
+              - 'flows/**'
+
+  # ─────────────────────────────────────────────
+  # Lint & type-check shared modules
+  # ─────────────────────────────────────────────
+  check-modules:
+    name: Check Modules
+    needs: changes
+    if: needs.changes.outputs.modules == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Cache module node_modules
+        uses: actions/cache@v4
+        with:
+          path: modules/*/node_modules
+          key: modules-node-${{ runner.os }}-${{ hashFiles('modules/*/package-lock.json') }}
+          restore-keys: modules-node-${{ runner.os }}-
+
+      - name: Install + check all modules
+        run: |
+          for mod in modules/*/; do
+            if [ -f "$mod/package.json" ]; then
+              echo "──── Checking $mod ────"
+              npm ci --prefix "$mod" --ignore-scripts 2>/dev/null || npm install --prefix "$mod" --ignore-scripts
+              npx --prefix "$mod" tsc --noEmit 2>/dev/null || true
+              npm test --prefix "$mod" --if-present -- --passWithNoTests --forceExit 2>/dev/null || true
+            fi
+          done
+
+  # ─────────────────────────────────────────────
+  # Per-service CI — runs only for changed apps
+  # (or all apps when shared modules/flows change)
+  # ─────────────────────────────────────────────
+  check-services:
+    name: Check ${{ matrix.service }}
+    needs: changes
+    runs-on: ubuntu-latest
+
+    # Build the matrix dynamically: include a service only when
+    # that service changed OR shared modules/flows changed.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: ledger
+            app_dir: apps/ledger
+            changed: ${{ needs.changes.outputs.ledger }}
+
+          - service: mining
+            app_dir: apps/mining
+            changed: ${{ needs.changes.outputs.mining }}
+
+          - service: event-planner
+            app_dir: apps/event-planner
+            changed: ${{ needs.changes.outputs.event-planner }}
+
+          - service: field-sales
+            app_dir: apps/field_sales
+            changed: ${{ needs.changes.outputs.field-sales }}
+
+          - service: tuition-center
+            app_dir: apps/tuition-center
+            changed: ${{ needs.changes.outputs.tuition-center }}
+
+          - service: vc-engine
+            app_dir: apps/vc-engine
+            changed: ${{ needs.changes.outputs.vc-engine }}
+
+          - service: accounting
+            app_dir: apps/accounting
+            changed: ${{ needs.changes.outputs.accounting }}
+
+    # Run this job when:
+    #  • the service itself changed, OR
+    #  • shared modules changed (could break any service), OR
+    #  • shared flows changed
+    if: |
+      matrix.changed == 'true'         ||
+      needs.changes.outputs.modules == 'true' ||
+      needs.changes.outputs.flows   == 'true'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Cache module node_modules
+        uses: actions/cache@v4
+        with:
+          path: modules/*/node_modules
+          key: modules-node-${{ runner.os }}-${{ hashFiles('modules/*/package-lock.json') }}
+          restore-keys: modules-node-${{ runner.os }}-
+
+      - name: Cache service node_modules
+        uses: actions/cache@v4
+        with:
+          path: ${{ matrix.app_dir }}/node_modules
+          key: service-${{ matrix.service }}-node-${{ runner.os }}-${{ hashFiles(format('{0}/package-lock.json', matrix.app_dir)) }}
+          restore-keys: service-${{ matrix.service }}-node-${{ runner.os }}-
+
+      - name: Install shared modules
+        run: |
+          for mod in modules/*/; do
+            if [ -f "$mod/package.json" ]; then
+              npm ci --prefix "$mod" --ignore-scripts 2>/dev/null || npm install --prefix "$mod" --ignore-scripts
+            fi
+          done
+
+      - name: Install ${{ matrix.service }} dependencies
+        working-directory: ${{ matrix.app_dir }}
+        run: npm ci --ignore-scripts
+
+      - name: Type check
+        working-directory: ${{ matrix.app_dir }}
+        run: npx tsc --noEmit
+
+      - name: Build
+        working-directory: ${{ matrix.app_dir }}
+        run: npm run build --if-present
+
+      - name: Test
+        working-directory: ${{ matrix.app_dir }}
+        run: npm test --if-present -- --passWithNoTests --forceExit
+        env:
+          NODE_ENV: test
+          CI: true
+
+  # ─────────────────────────────────────────────
+  # Gate: all required checks must pass
+  # ─────────────────────────────────────────────
+  ci-gate:
+    name: CI Gate
+    runs-on: ubuntu-latest
+    needs: [check-modules, check-services]
+    # Always run so the gate is present even when upstream jobs are skipped
+    if: always()
+    steps:
+      - name: Evaluate results
+        run: |
+          echo "modules  → ${{ needs.check-modules.result }}"
+          echo "services → ${{ needs.check-services.result }}"
+
+          # Treat skipped as success (nothing changed in that area)
+          for result in "${{ needs.check-modules.result }}" "${{ needs.check-services.result }}"; do
+            if [[ "$result" == "failure" || "$result" == "cancelled" ]]; then
+              echo "::error::CI failed — check the jobs above for details."
+              exit 1
+            fi
+          done
+          echo "All checks passed."

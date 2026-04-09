@@ -1,0 +1,73 @@
+# Triggered by git tags in the format:  {service}/v{semver}
+#
+# Examples:
+#   git tag ledger/v1.0.0       && git push origin ledger/v1.0.0
+#   git tag mining/v2.1.3       && git push origin mining/v2.1.3
+#   git tag event-planner/v1.0.0 && git push origin event-planner/v1.0.0
+#
+# Supported services:
+#   ledger | mining | event-planner | field-sales | tuition-center | vc-engine | accounting
+
+name: Deploy Service
+
+on:
+  push:
+    tags:
+      - '*/v[0-9]*'   # matches: ledger/v1.0.0, mining/v2.1.3, etc.
+
+jobs:
+  # ─────────────────────────────────────────────
+  # Step 1: Parse tag → extract service + version
+  # ─────────────────────────────────────────────
+  parse-tag:
+    name: Parse Tag
+    runs-on: ubuntu-latest
+    outputs:
+      service: ${{ steps.parse.outputs.service }}
+      version: ${{ steps.parse.outputs.version }}
+      app_dir: ${{ steps.parse.outputs.app_dir }}
+
+    steps:
+      - name: Parse tag into service + version + app_dir
+        id: parse
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          SERVICE="${TAG%%/v*}"
+          VERSION="${TAG#*/v}"
+
+          echo "Tag:     $TAG"
+          echo "Service: $SERVICE"
+          echo "Version: $VERSION"
+
+          # Map service name (tag) → directory in repo
+          case "$SERVICE" in
+            ledger)         APP_DIR="apps/ledger"         ;;
+            mining)         APP_DIR="apps/mining"         ;;
+            event-planner)  APP_DIR="apps/event-planner"  ;;
+            field-sales)    APP_DIR="apps/field_sales"    ;;
+            tuition-center) APP_DIR="apps/tuition-center" ;;
+            vc-engine)      APP_DIR="apps/vc-engine"      ;;
+            accounting)     APP_DIR="apps/accounting"     ;;
+            *)
+              echo "::error::Unknown service '$SERVICE'. Supported: ledger | mining | event-planner | field-sales | tuition-center | vc-engine | accounting"
+              exit 1
+              ;;
+          esac
+
+          echo "service=$SERVICE"   >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION"   >> "$GITHUB_OUTPUT"
+          echo "app_dir=$APP_DIR"   >> "$GITHUB_OUTPUT"
+
+  # ─────────────────────────────────────────────
+  # Step 2: Build, test, and deploy the service
+  # ─────────────────────────────────────────────
+  build-and-deploy:
+    name: Build & Deploy ${{ needs.parse-tag.outputs.service }} v${{ needs.parse-tag.outputs.version }}
+    needs: parse-tag
+    uses: ./.github/workflows/_build-deploy.yml
+    with:
+      service:  ${{ needs.parse-tag.outputs.service }}
+      version:  ${{ needs.parse-tag.outputs.version }}
+      app_dir:  ${{ needs.parse-tag.outputs.app_dir }}
+      environment: production
+    secrets: inherit
